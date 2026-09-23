@@ -1,0 +1,7 @@
+*.iml
+.gradle/
+build/
+app/build/
+local.properties
+*.tar.gz
+.DS_Store

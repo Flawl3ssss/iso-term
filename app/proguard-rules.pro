@@ -1,0 +1,2 @@
+-keep class com.termux.** { *; }
+-dontwarn com.termux.**
