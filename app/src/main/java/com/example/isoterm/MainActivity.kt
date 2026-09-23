@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -13,6 +16,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.termux.view.TerminalView
+import com.termux.view.TerminalViewClient
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
@@ -23,14 +27,15 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
     private lateinit var termView: TerminalView
     private lateinit var logView: TextView
     private var session: TerminalSession? = null
+    private val viewClient = IsoViewClient()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // UI кодом, без XML — меньше файлов, проще сборка
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         termView = TerminalView(this, null)
+        termView.setTerminalViewClient(viewClient)
         termView.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         )
@@ -85,7 +90,6 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
         root.addView(logScroll)
         setContentView(root)
 
-        // Уведомления нужны для ForegroundService на 13+
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -94,7 +98,6 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
             )
         }
 
-        // Фон сразу — иначе сессию прибьют при сворачивании
         TerminalService.start(this)
         log("Фон запущен. Xiaomi: дай автозапуск + без ограничений, иначе HyperOS убьёт даже FGS.")
         log("Изоляция: только ${filesDir.absolutePath}, sdcard/storage не монтируются.")
@@ -103,7 +106,8 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     private fun log(s: String) {
-        runOnUiThread { logView.append(s + "\n") }
+        Log.i("IsoTerm", s)
+        runOnUiThread { try { logView.append(s + "\n") } catch (_: Exception) {} }
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
@@ -120,19 +124,13 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
                     ProotManager.downloadToFile(ProotManager.UBUNTU_URL, tarGz)
                 }
                 log("Распаковка в " + ProotManager.rootfsDir(this))
-                val code = ProotManager.unpackRootfs(tarGz, ProotManager.rootfsDir(this), ::logSync)
+                val code = ProotManager.unpackRootfs(tarGz, ProotManager.rootfsDir(this)) { log(it) }
                 log("tar exit=$code")
-                // tar.gz можно удалить для экономии места
-                // tarGz.delete()
                 log(if (code == 0) "Готово. Жми Запустить." else "Ошибка распаковки, смотри лог выше.")
             } catch (e: Exception) {
                 log("Ошибка: ${e.message}")
             }
         }.start()
-    }
-
-    private fun logSync(s: String) {
-        runOnUiThread { logView.append(s + "\n") }
     }
 
     private fun launchShell() {
@@ -153,19 +151,6 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
                         this
                     )
                     termView.attachSession(session)
-                    termView.setTerminalViewClient(object : com.termux.view.TerminalViewClient {
-                        override fun onScale(scale: Float): Float = 1f
-                        override fun onSingleTapUp(e: android.view.MotionEvent?) {}
-                        override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-                        override fun shouldEnforceCharBasedInput(): Boolean = true
-                        override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
-                        override fun isTerminalViewSelected(): Boolean = true
-                        override fun copyModeChanged(copyMode: Boolean) {}
-                        override fun onKeyDown(keyCode: Int, e: android.view.KeyEvent?, s: TerminalSession?): Boolean = false
-                        override fun onKeyUp(keyCode: Int, e: android.view.KeyEvent?): Boolean = false
-                        override fun onLongPress(e: android.view.MotionEvent?): Boolean = false
-                    })
-                    // Фон держать пока открыта сессия
                     TerminalService.start(this)
                     log("Сессия запущена: proot -r ubuntu + только внутренние бинды.")
                 }
@@ -175,17 +160,53 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
         }.start()
     }
 
-    // --- TerminalSessionClient ---
-    override fun onTextChanged(s: TerminalSession?) {}
-    override fun onTitleChanged(s: TerminalSession?) {}
-    override fun onSessionFinished(s: TerminalSession?) { log("Сессия завершена.") }
-    override fun onCopyTextToClipboard(s: TerminalSession?, text: String?) {
-        getSystemService(android.content.ClipboardManager::class.java)
-            ?.setPrimaryClip(android.content.ClipData.newPlainText("term", text))
+    // --- TerminalSessionClient (сигнатуры как в termux 0.118.0) ---
+    override fun onTextChanged(changedSession: TerminalSession) {}
+    override fun onTitleChanged(changedSession: TerminalSession) {}
+    override fun onSessionFinished(finishedSession: TerminalSession) { log("Сессия завершена.") }
+    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+        try {
+            getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("term", text))
+        } catch (_: Exception) {}
     }
-    override fun onPasteTextFromClipboard(s: TerminalSession?) {}
-    override fun onBell(s: TerminalSession?) {}
-    override fun onColorsChanged(s: TerminalSession?) {}
+    override fun onPasteTextFromClipboard(session: TerminalSession?) {}
+    override fun onBell(session: TerminalSession) {}
+    override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
+    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
     override fun getTerminalCursorStyle(): Int = TerminalEmulator.DEFAULT_TERMINAL_CURSOR_STYLE
+    override fun logError(tag: String, message: String) { Log.e(tag, message) }
+    override fun logWarn(tag: String, message: String) { Log.w(tag, message) }
+    override fun logInfo(tag: String, message: String) { Log.i(tag, message) }
+    override fun logDebug(tag: String, message: String) { Log.d(tag, message) }
+    override fun logVerbose(tag: String, message: String) { Log.v(tag, message) }
+    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { Log.e(tag, message, e) }
+    override fun logStackTrace(tag: String, e: Exception) { Log.e(tag, e.message, e) }
+
+    inner class IsoViewClient : TerminalViewClient {
+        override fun onScale(scale: Float): Float = 1f
+        override fun onSingleTapUp(e: MotionEvent) {}
+        override fun shouldBackButtonBeMappedToEscape(): Boolean = false
+        override fun shouldEnforceCharBasedInput(): Boolean = true
+        override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
+        override fun isTerminalViewSelected(): Boolean = true
+        override fun copyModeChanged(copyMode: Boolean) {}
+        override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean = false
+        override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean = false
+        override fun onLongPress(event: MotionEvent): Boolean = false
+        override fun readControlKey(): Boolean = false
+        override fun readAltKey(): Boolean = false
+        override fun readShiftKey(): Boolean = false
+        override fun readFnKey(): Boolean = false
+        override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
+        override fun onEmulatorSet() {}
+        override fun logError(tag: String, message: String) { Log.e(tag, message) }
+        override fun logWarn(tag: String, message: String) { Log.w(tag, message) }
+        override fun logInfo(tag: String, message: String) { Log.i(tag, message) }
+        override fun logDebug(tag: String, message: String) { Log.d(tag, message) }
+        override fun logVerbose(tag: String, message: String) { Log.v(tag, message) }
+        override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { Log.e(tag, message, e) }
+        override fun logStackTrace(tag: String, e: Exception) { Log.e(tag, e.message, e) }
+    }
 }
