@@ -81,8 +81,7 @@ class TerminalService : LifecycleService() {
     }
 
     override fun onBind(intent: Intent): IBinder? {
-        super.onBind(intent)
-        return null
+        return super.onBind(intent)
     }
 
     override fun onDestroy() {

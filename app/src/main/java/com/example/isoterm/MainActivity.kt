@@ -7,14 +7,13 @@ import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.app.Activity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import com.termux.terminal.TerminalEmulator
@@ -22,7 +21,7 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import java.io.File
 
-class MainActivity : AppCompatActivity(), TerminalSessionClient {
+class MainActivity : Activity(), TerminalSessionClient {
 
     private lateinit var termView: TerminalView
     private lateinit var logView: TextView
@@ -93,12 +92,14 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1
-            )
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
 
-        TerminalService.start(this)
+        try {
+            TerminalService.start(this)
+        } catch (e: Exception) {
+            Log.e("IsoTerm", "FGS start failed", e)
+        }
         log("Фон запущен. Xiaomi: дай автозапуск + без ограничений, иначе HyperOS убьёт даже FGS.")
         log("Изоляция: только ${filesDir.absolutePath}, sdcard/storage не монтируются.")
         if (ProotManager.isInstalled(this)) log("Ubuntu уже установлен. Жми Запустить.")
@@ -151,7 +152,7 @@ class MainActivity : AppCompatActivity(), TerminalSessionClient {
                         this
                     )
                     termView.attachSession(session)
-                    TerminalService.start(this)
+                    try { TerminalService.start(this) } catch (_: Exception) {}
                     log("Сессия запущена: proot -r ubuntu + только внутренние бинды.")
                 }
             } catch (e: Exception) {
