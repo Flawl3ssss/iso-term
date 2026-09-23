@@ -40,7 +40,8 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.lifecycle:lifecycle-service:2.8.7'
-    // Терминал от Termux https://github.com/termux/termux-app/wiki/Termux-Libraries
-    implementation 'com.github.termux.termux-app:terminal-view:0.118.0'
-    implementation 'com.github.termux.termux-app:terminal-emulator:0.118.0'
+    // Правильно по wiki https://github.com/termux/termux-app/wiki/Termux-Libraries
+    // group = com.termux.termux-app (не com.github...), триггер: https://github.com/termux/termux-app/blob/master/.github/workflows/trigger_library_builds_on_jitpack.yml
+    implementation 'com.termux.termux-app:terminal-view:0.118.0'
+    implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
 }
